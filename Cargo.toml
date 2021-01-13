@@ -1,0 +1,10 @@
+[package]
+name = "kakconf"
+version = "0.1.0"
+authors = ["Matteo Guarda <matteoguarda@tutanota.com>"]
+edition = "2018"
+
+[dependencies]
+anyhow = "1.0.32"
+clap = "2.33.3"
+
