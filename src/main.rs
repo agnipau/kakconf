@@ -149,7 +149,7 @@ fn main() -> anyhow::Result<()> {
             println!("{}", result.unwrap_or(piped_s));
         }
         ("dec-number", Some(matches)) => {
-            // let mut piped_s = String::new();
+            let mut piped_s = String::new();
             io::stdin().read_to_string(&mut piped_s)?;
             let mut piped_s = piped_s.trim().to_owned();
             let other = matches.value_of("other").unwrap();
