@@ -1,6 +1,7 @@
 mod clipboard;
 mod escape;
 mod inc_dec_number;
+mod put_cursors;
 mod wrap;
 
 use {
@@ -100,6 +101,34 @@ fn main() -> anyhow::Result<()> {
                         .help("The value to increment/decrement")
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("put-cursors")
+                .about("Put cursors at specific line numbers")
+                .arg(
+                    Arg::with_name("total_lines")
+                        .short("t")
+                        .long("total_lines")
+                        .takes_value(true)
+                        .required(true)
+                        .help("%val{buf_line_count}")
+                )
+                .arg(
+                    Arg::with_name("lines")
+                        .short("l")
+                        .long("lines")
+                        .min_values(1)
+                        .required(true)
+                        .help("The line numbers where to put the cursors")
+                )
+                .arg(
+                    Arg::with_name("zero-index")
+                        .short("z")
+                        .long("zero-index")
+                        .takes_value(false)
+                        .required(false)
+                        .help("Should the lines indexes be 0-based?")
+                ),
+        )
         .get_matches();
 
     match matches.subcommand() {
@@ -155,6 +184,21 @@ fn main() -> anyhow::Result<()> {
             let other = matches.value_of("other").unwrap();
             let result = IncDecNumber::Decrement.compute(&mut piped_s, &mut other.to_owned());
             println!("{}", result.unwrap_or(piped_s));
+        }
+        ("put-cursors", Some(matches)) => {
+            let total_lines: usize = matches.value_of("total_lines").unwrap().parse()?;
+
+            let zero_index = matches.is_present("zero-index");
+            let mut lines: Vec<usize> = Vec::new();
+            for line in matches.values_of("lines").unwrap() {
+                if let Ok(line) = line.parse() {
+                    lines.push(if zero_index { line + 1 } else { line });
+                }
+            }
+            lines.sort();
+
+            let result = put_cursors::put_cursors(total_lines, &lines);
+            println!("{}", result);
         }
         _ => unreachable!(),
     }
