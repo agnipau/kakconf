@@ -29,16 +29,26 @@ pub fn get_clipboard(direction: &Direction, select: bool) -> anyhow::Result<Stri
     let contents = contents.trim_end();
 
     Ok(match (ends_with_newline, select, direction) {
-        (true, false, Direction::After) => format!("exec -draft '<a-o>ji{}<esc>'", contents),
-        (true, false, Direction::Before) => format!("exec -draft '<a-O>ki{}<esc>'", contents),
-        (true, true, Direction::After) => format!("exec '<a-o>glla{}<esc>i<esc>La<esc>'", contents),
+        (true, false, Direction::After) => {
+            format!("execute-keys -draft '<a-o>ji{}<esc>'", contents)
+        }
+        (true, false, Direction::Before) => {
+            format!("execute-keys -draft '<a-O>ki{}<esc>'", contents)
+        }
+        (true, true, Direction::After) => {
+            format!("execute-keys '<a-o>glla{}<esc>i<esc>La<esc>'", contents)
+        }
         (true, true, Direction::Before) => format!(
-            "exec '<a-O>ka{}<ret><esc>i<esc>Li<backspace><esc>a<esc>'",
+            "execute-keys '<a-O>ka{}<ret><esc>i<esc>Li<backspace><esc>a<esc>'",
             contents
         ),
-        (false, false, Direction::After) => format!("exec -draft 'li{}<esc>'", contents),
-        (false, false, Direction::Before) => format!("exec -draft 'i{}<esc>'", contents),
-        (false, true, Direction::After) => format!("exec 'a{}<esc>i<esc>La<esc>'", contents),
-        (false, true, Direction::Before) => format!("exec 'ha{}<esc>i<esc>La<esc>'", contents),
+        (false, false, Direction::After) => format!("execute-keys -draft 'li{}<esc>'", contents),
+        (false, false, Direction::Before) => format!("execute-keys -draft 'i{}<esc>'", contents),
+        (false, true, Direction::After) => {
+            format!("execute-keys 'a{}<esc>i<esc>La<esc>'", contents)
+        }
+        (false, true, Direction::Before) => {
+            format!("execute-keys 'ha{}<esc>i<esc>La<esc>'", contents)
+        }
     })
 }
