@@ -195,9 +195,11 @@ fn main() -> anyhow::Result<()> {
                     lines.push(if zero_index { line + 1 } else { line });
                 }
             }
+            let active_cursor = *lines.last().unwrap();
             lines.sort();
+            let active_cursor_idx = lines.iter().position(|&x| x == active_cursor).unwrap();
 
-            let result = put_cursors::put_cursors(total_lines, &lines);
+            let result = put_cursors::put_cursors(total_lines, &lines, active_cursor_idx);
             println!("{}", result);
         }
         _ => unreachable!(),

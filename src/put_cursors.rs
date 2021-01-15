@@ -1,6 +1,7 @@
 /// `lines` indexes are 1-based like in Kakoune.
+/// `active_cursor_idx` is 0-based.
 /// `lines` is assumed to be sorted in ascending order.
-pub fn put_cursors(total_lines: usize, lines: &[usize]) -> String {
+pub fn put_cursors(total_lines: usize, lines: &[usize], active_cursor_idx: usize) -> String {
     if lines.len() == 1 {
         format!("execute-keys '{}g'", lines[0])
     } else {
@@ -19,6 +20,9 @@ pub fn put_cursors(total_lines: usize, lines: &[usize]) -> String {
             line_no += 1;
         }
         if lines.last() < Some(&total_lines) {
+            keys.push(')');
+        }
+        for _ in 0..active_cursor_idx {
             keys.push(')');
         }
         format!("execute-keys '{}'", keys)
