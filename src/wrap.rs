@@ -1,7 +1,4 @@
-pub fn wrap(valid_prefixes: &[&str], text: &str, column: u32) -> Option<String> {
-    // let mut file = std::fs::write("/home/agnipau/maurubi", text).unwrap();
-    // return None;
-
+pub fn wrap(valid_prefixes: &[&str], text: &str, width: u32) -> Option<String> {
     let mut prefix = None;
     for pre in valid_prefixes {
         if text.starts_with(pre) {
@@ -11,13 +8,19 @@ pub fn wrap(valid_prefixes: &[&str], text: &str, column: u32) -> Option<String> 
     if prefix.is_none() {
         return None;
     }
-    let prefix = prefix.unwrap();
-    let prefixlen = prefix.len();
+    let prefix = if valid_prefixes.is_empty() {
+        None
+    } else {
+        Some(*prefix.unwrap())
+    };
+    let prefixlen = prefix.map(|x| x.len()).unwrap_or_default();
 
     let mut text_no_prefixes = String::new();
     for (i, line) in text.lines().enumerate() {
-        if !line.starts_with(prefix) {
-            return None;
+        if let Some(prefix) = prefix {
+            if !line.starts_with(prefix) {
+                return None;
+            }
         }
         if i > 0 {
             text_no_prefixes.push(' ');
@@ -25,18 +28,25 @@ pub fn wrap(valid_prefixes: &[&str], text: &str, column: u32) -> Option<String> 
         text_no_prefixes.push_str(&line[prefixlen..]);
     }
 
-    let mut output = String::from(*prefix);
-    let mut outputlen = prefixlen;
+    let mut output = String::new();
+    let mut outputlen = 0;
+    if let Some(prefix) = prefix {
+        output.push_str(prefix);
+        outputlen += prefixlen;
+    }
     for (i, word) in text_no_prefixes.split(' ').enumerate() {
         let wordlen = word.len();
         let mut first_word_of_line = false;
-        if wordlen + outputlen + 1 >= column as usize {
+        if wordlen + outputlen + 1 >= width as usize {
             output.push('\n');
-            output.push_str(prefix);
-            outputlen = prefixlen;
+            outputlen = 0;
+            if let Some(prefix) = prefix {
+                output.push_str(prefix);
+                outputlen += prefixlen;
+            }
             first_word_of_line = true;
         }
-        if !first_word_of_line && i > 0 {
+        if prefix.is_some() && !first_word_of_line && i > 0 {
             output.push(' ');
             outputlen += 1;
         }

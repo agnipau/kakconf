@@ -58,20 +58,20 @@ fn main() -> anyhow::Result<()> {
                 ),
         )
         .subcommand(
-            SubCommand::with_name("wrap-comment")
-                .about("Wrap comments to fit N chars for a specific language")
+            SubCommand::with_name("wrap-text")
+                .about("Wrap text to fit '--width' chars for a specific language")
                 .arg(
                     Arg::with_name("filetype")
                         .short("f")
                         .long("filetype")
                         .takes_value(true)
-                        .required(true)
+                        .required(false)
                         .help("%opt{filetype}")
                 )
                 .arg(
-                    Arg::with_name("column")
-                        .short("c")
-                        .long("column")
+                    Arg::with_name("width")
+                        .short("w")
+                        .long("width")
                         .takes_value(true)
                         .required(true)
                         .help("%opt{autowrap_column}")
@@ -151,18 +151,19 @@ fn main() -> anyhow::Result<()> {
             let kakcmd = clipboard::get_clipboard(&direction, select)?;
             print!("{}", kakcmd);
         }
-        ("wrap-comment", Some(matches)) => {
+        ("wrap-text", Some(matches)) => {
             let mut piped_s = String::new();
             io::stdin().read_to_string(&mut piped_s)?;
-            let column = matches.value_of("column").unwrap();
+            let width = matches.value_of("width").unwrap();
 
-            let prefixes: Option<&[&str]> = match matches.value_of("filetype").unwrap() {
-                "rust" => Some(&["// ", "/// ", "//! "]),
-                "sh" | "python" | "kak" | "toml" => Some(&["# "]),
-                _ => None,
+            let prefixes: Option<&[&str]> = match matches.value_of("filetype") {
+                Some("rust") => Some(&["// ", "/// ", "//! "]),
+                Some("sh") | Some("python") | Some("kak") | Some("toml") => Some(&["# "]),
+                Some(_) => Some(&[]),
+                None => None,
             };
             if let Some(prefixes) = prefixes {
-                if let Some(s) = wrap::wrap(prefixes, &piped_s, column.parse()?) {
+                if let Some(s) = wrap::wrap(prefixes, &piped_s, width.parse()?) {
                     println!("{}", s);
                 } else {
                     print!("{}", piped_s);
