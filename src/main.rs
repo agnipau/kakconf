@@ -1,18 +1,22 @@
 mod clipboard;
+mod editorconfig;
+mod editorconfig_sys;
 mod escape;
 mod inc_dec_number;
 mod put_cursors;
-mod wrap;
 mod selections_desc;
+mod wrap;
 
 use {
     clap::{crate_authors, crate_name, crate_version, App, AppSettings, Arg, SubCommand},
     clipboard::Direction,
+    editorconfig::EditorConfig,
     inc_dec_number::IncDecNumber,
     selections_desc::SelectionsDesc,
     std::{
         convert::TryFrom,
         io::{self, Read},
+        path::Path,
     },
 };
 
@@ -107,9 +111,9 @@ fn main() -> anyhow::Result<()> {
             SubCommand::with_name("put-cursors")
                 .about("Put cursors at specific line numbers")
                 .arg(
-                    Arg::with_name("total_lines")
+                    Arg::with_name("total-lines")
                         .short("t")
-                        .long("total_lines")
+                        .long("total-lines")
                         .takes_value(true)
                         .required(true)
                         .help("%val{buf_line_count}")
@@ -150,6 +154,32 @@ fn main() -> anyhow::Result<()> {
                         .takes_value(true)
                         .required(true)
                         .help("%val{selections_desc}")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("editorconfig")
+                .about("A rewrite of editorconfig-core-c CLI in Rust")
+                .arg(
+                    Arg::with_name("file-path")
+                        .short("p")
+                        .long("file-path")
+                        .required(true)
+                        .takes_value(true)
+                        .help("Full path to the file"),
+                )
+                .arg(
+                    Arg::with_name("version")
+                        .short("b")
+                        .long("version")
+                        .takes_value(true)
+                        .help("Specify version (used by devs to test compatibility)")
+                )
+                .arg(
+                    Arg::with_name("conf-filename")
+                        .short("f")
+                        .long("conf-filename")
+                        .takes_value(true)
+                        .help("Specify conf filename other than \".editorconfig\"")
                 ),
         )
         .get_matches();
@@ -210,7 +240,7 @@ fn main() -> anyhow::Result<()> {
             println!("{}", result.unwrap_or(piped_s));
         }
         ("put-cursors", Some(matches)) => {
-            let total_lines: usize = matches.value_of("total_lines").unwrap().parse()?;
+            let total_lines: usize = matches.value_of("total-lines").unwrap().parse()?;
 
             let zero_index = matches.is_present("zero-index");
             let mut lines: Vec<usize> = Vec::new();
@@ -235,6 +265,80 @@ fn main() -> anyhow::Result<()> {
                 println!("{}", result);
             } else {
                 eprintln!("Invalid %val{{selections_desc}}");
+            }
+        }
+        ("editorconfig", Some(matches)) => {
+            let version = matches
+                .value_of("version")
+                .and_then(|x| editorconfig::Version::new(x).ok());
+            let conf_filename = matches.value_of("conf-filename");
+            let file_path = matches.value_of("file-path").unwrap();
+
+            let econfig = EditorConfig::new(conf_filename, version.as_ref())?;
+            let parsed = econfig.parse(Path::new(file_path))?;
+
+            if let Some(v) = parsed.get("indent_style") {
+                match v.as_str() {
+                    "tab" => {
+                        println!(
+                            "set-option buffer indentwidth 0
+set-option buffer aligntab true"
+                        );
+                    }
+                    "space" => {
+                        let indent_size = &parsed["indent_size"];
+                        let indent_width = if indent_size == "tab" {
+                            4
+                        } else {
+                            indent_size.parse()?
+                        };
+                        println!(
+                            "set-option buffer indentwidth {}
+set-option buffer aligntab false",
+                            indent_width
+                        );
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Some(v) = parsed.get("indent_size") {
+                println!("set-option buffer tabstop {}", v);
+            }
+            if let Some(v) = parsed.get("tab_width") {
+                println!("set-option buffer tabstop {}", v);
+            }
+
+            if let Some(v) = parsed.get("end_of_line") {
+                if v == "lf" || v == "crlf" {
+                    println!("set-option buffer eolformat {}", v);
+                }
+            }
+
+            if let Some(v) = parsed.get("charset") {
+                if v == "utf-8-bom" {
+                    println!("set-option buffer BOM utf8");
+                }
+            }
+
+            // if let Some(v) = parsed.get("trim_trailing_whitespace") {
+            //     if v == "true" {
+            //         println!(
+            //             r#"hook buffer BufWritePre {:?} -group editorconfig-hooks %[ try %[ execute-keys -draft %[ %s\h+$|\n+\z<ret>d ] ] ]"#,
+            //             file_path,
+            //         );
+            //     }
+            // }
+
+            if let Some(v) = parsed.get("max_line_length") {
+                if v != "off" {
+                    println!(
+                        r#"set window autowrap_column {}
+remove-highlighter "window/column_%opt[autowrap_column]_default,%opt[gruvbox_bg0]"
+add-highlighter window/ column "%opt[autowrap_column]" "default,%opt[gruvbox_bg0]""#,
+                        v
+                    );
+                }
             }
         }
         _ => unreachable!(),
