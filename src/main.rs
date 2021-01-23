@@ -3,11 +3,13 @@ mod escape;
 mod inc_dec_number;
 mod put_cursors;
 mod wrap;
+mod selections_desc;
 
 use {
     clap::{crate_authors, crate_name, crate_version, App, AppSettings, Arg, SubCommand},
     clipboard::Direction,
     inc_dec_number::IncDecNumber,
+    selections_desc::SelectionsDesc,
     std::{
         convert::TryFrom,
         io::{self, Read},
@@ -129,6 +131,27 @@ fn main() -> anyhow::Result<()> {
                         .help("Should the lines indexes be 0-based?")
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("extend-selections")
+                .about("Extend selections to the left/right to align with the leftmost/rightmost selected column")
+                .arg(
+                    Arg::with_name("direction")
+                        .short("d")
+                        .long("direction")
+                        .takes_value(true)
+                        .required(true)
+                        .possible_values(&["left", "right"])
+                        .help("Use the leftmost or rightmost column to align?")
+                )
+                .arg(
+                    Arg::with_name("selections-desc")
+                        .short("s")
+                        .long("selections-desc")
+                        .takes_value(true)
+                        .required(true)
+                        .help("%val{selections_desc}")
+                ),
+        )
         .get_matches();
 
     match matches.subcommand() {
@@ -202,6 +225,17 @@ fn main() -> anyhow::Result<()> {
 
             let result = put_cursors::put_cursors(total_lines, &lines, active_cursor_idx);
             println!("{}", result);
+        }
+        ("extend-selections", Some(matches)) => {
+            let _direction = matches.value_of("direction").unwrap();
+            let seldesc = matches.value_of("selections-desc").unwrap();
+            if let Some(mut seldesc) = SelectionsDesc::new(seldesc) {
+                seldesc.extend_left();
+                let result: String = seldesc.into();
+                println!("{}", result);
+            } else {
+                eprintln!("Invalid %val{{selections_desc}}");
+            }
         }
         _ => unreachable!(),
     }
