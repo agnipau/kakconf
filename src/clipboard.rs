@@ -24,7 +24,7 @@ pub fn get_clipboard(direction: &Direction, select: bool) -> anyhow::Result<Stri
     let contents = Command::new("xsel").arg("-ob").output()?.stdout;
     let contents = std::str::from_utf8(&contents)?;
     let contents = escape::escape_raw_insert(&contents);
-    let contents = escape::double_string(&contents, "'");
+    let contents = contents.replace('\'', "''");
     let ends_with_newline = contents.ends_with('\n');
     let contents = contents.trim_end();
 

@@ -76,8 +76,10 @@ hook global WinSetOption filetype=(rust|typescript|javascript|python|sh|dart|jso
     assert_eq!(left, right);
 }
 
-/// Doubles all occurences of `sub_string` in `master_string`.
-pub fn double_string(master_string: &str, sub_string: &str) -> String {
-    master_string.replace(sub_string, &format!("{0}{0}", sub_string))
+/// Quote `s` to be used safely inside Kakoune.
+pub fn quote(s: &str) -> String {
+    let mut s = s.replace('\'', "''");
+    s.insert(0, '\'');
+    s.push('\'');
+    s
 }
-

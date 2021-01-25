@@ -2,6 +2,7 @@ mod clipboard;
 mod editorconfig;
 mod editorconfig_sys;
 mod escape;
+mod fzf;
 mod inc_dec_number;
 mod put_cursors;
 mod selections_desc;
@@ -33,13 +34,16 @@ fn main() -> anyhow::Result<()> {
             AppSettings::ColoredHelp,
         ])
         .subcommand(
-            SubCommand::with_name("double-string")
-                .about("Doubles all occurences of a string inside the piped string")
+            SubCommand::with_name("quote")
+                .about("Quote a string to be used safely inside kakoune")
                 .arg(
-                    Arg::with_name("SUB_STRING")
+                    Arg::with_name("string")
+                        .short("s")
+                        .long("string")
+                        .takes_value(true)
                         .required(true)
-                        .help("The string to double inside `MASTER_STRING`"),
-                ),
+                        .help("The string to quote")
+                )
         )
         .subcommand(
             SubCommand::with_name("raw-insert")
@@ -72,6 +76,7 @@ fn main() -> anyhow::Result<()> {
                         .long("filetype")
                         .takes_value(true)
                         .required(false)
+                        .possible_values(&["python", "rust", "kak", "toml", "sh"])
                         .help("%opt{filetype}")
                 )
                 .arg(
@@ -182,14 +187,522 @@ fn main() -> anyhow::Result<()> {
                         .help("Specify conf filename other than \".editorconfig\"")
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("fzf-edit")
+                .about("Open a file using FZF")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("kak-buffile")
+                        .short("f")
+                        .long("kak-buffile")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{buffile}")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-edit-inner")
+                .about("Inner command called by tmux in fzf-edit")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("kak-buffile")
+                        .short("f")
+                        .long("kak-buffile")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{buffile}")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-edit-inner-preview")
+                .about("Inner command called by fzf in fzf-edit-inner")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("fzf-file")
+                        .short("f")
+                        .long("fzf-file")
+                        .required(true)
+                        .takes_value(true)
+                        .help("{} in `fzf --preview`")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-cd")
+                .about("Change directory using FZF")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-cd-inner")
+                .about("Inner command called by tmux in fzf-cd")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-cd-inner-preview")
+                .about("Inner command called by fzf in fzf-cd-inner")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("fzf-selected-list")
+                        .short("f")
+                        .long("fzf-selected-list")
+                        .required(true)
+                        .multiple(true)
+                        .min_values(1)
+                        .help("{+} in `fzf --preview`")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-change-buffer")
+                .about("Change buffer using FZF")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("kak-buffile")
+                        .short("f")
+                        .long("kak-buffile")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{buffile}")
+                )
+                .arg(
+                    Arg::with_name("kak-buflist")
+                        .short("l")
+                        .long("kak-buflist")
+                        .required(true)
+                        .multiple(true)
+                        .min_values(1)
+                        .help("%val{buflist}")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-change-buffer-inner")
+                .about("Inner command called by tmux in fzf-change-buffer")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("kak-buffile")
+                        .short("f")
+                        .long("kak-buffile")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{buffile}")
+                )
+                .arg(
+                    Arg::with_name("kak-buflist")
+                        .short("l")
+                        .long("kak-buflist")
+                        .required(true)
+                        .multiple(true)
+                        .min_values(1)
+                        .help("%val{buflist}")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-change-buffer-inner-preview")
+                .about("Inner command called by fzf in fzf-change-buffer-inner")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("fzf-file")
+                        .short("f")
+                        .long("fzf-file")
+                        .required(true)
+                        .takes_value(true)
+                        .help("{} in `fzf --preview`")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-delete-buffer")
+                .about("Delete buffer using FZF")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("kak-buffile")
+                        .short("f")
+                        .long("kak-buffile")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{buffile}")
+                )
+                .arg(
+                    Arg::with_name("kak-buflist")
+                        .short("l")
+                        .long("kak-buflist")
+                        .required(true)
+                        .multiple(true)
+                        .min_values(1)
+                        .help("%val{buflist}")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-delete-buffer-inner")
+                .about("Inner command called by tmux in fzf-delete-buffer")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("kak-buffile")
+                        .short("f")
+                        .long("kak-buffile")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{buffile}")
+                )
+                .arg(
+                    Arg::with_name("kak-buflist")
+                        .short("l")
+                        .long("kak-buflist")
+                        .required(true)
+                        .multiple(true)
+                        .min_values(1)
+                        .help("%val{buflist}")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-delete-buffer-inner-preview")
+                .about("Inner command called by fzf in fzf-delete-buffer-inner")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("fzf-file")
+                        .short("f")
+                        .long("fzf-file")
+                        .required(true)
+                        .takes_value(true)
+                        .help("{} in `fzf --preview`")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-lines")
+                .about("Search through lines of the current buffer using FZF")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-lines-inner")
+                .about("Inner command called by tmux in fzf-lines")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-lines-inner-preview")
+                .about("Inner command called by fzf in fzf-lines-inner")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("fzf-indexes")
+                        .short("i")
+                        .long("fzf-indexes")
+                        .required(true)
+                        .multiple(true)
+                        .min_values(1)
+                        .help("{+n} in `fzf --preview`")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-rg")
+                .about("Jump to a file at a specific line using Ripgrep and FZF")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("rg-query")
+                        .short("q")
+                        .long("rg-query")
+                        .required(true)
+                        .takes_value(true)
+                        .help("The query to pass to ripgrep")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-rg-inner")
+                .about("Inner command called by tmux in fzf-rg")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("rg-query")
+                        .short("q")
+                        .long("rg-query")
+                        .required(true)
+                        .takes_value(true)
+                        .help("The query to pass to ripgrep")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("fzf-rg-inner-preview")
+                .about("Inner command called by fzf in fzf-rg-inner")
+                .arg(
+                    Arg::with_name("kak-session")
+                        .short("s")
+                        .long("kak-session")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{session}"),
+                )
+                .arg(
+                    Arg::with_name("kak-client")
+                        .short("c")
+                        .long("kak-client")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%val{client}")
+                )
+                .arg(
+                    Arg::with_name("fzf-file")
+                        .short("f")
+                        .long("fzf-file")
+                        .required(true)
+                        .takes_value(true)
+                        .help("{} in `fzf --preview`")
+                ),
+        )
         .get_matches();
 
     match matches.subcommand() {
-        ("double-string", Some(matches)) => {
-            let mut piped_s = String::new();
-            io::stdin().read_to_string(&mut piped_s)?;
-            let sub_string = matches.value_of("SUB_STRING").unwrap();
-            let result = escape::double_string(&piped_s, sub_string);
+        ("quote", Some(matches)) => {
+            let s = matches.value_of("string").unwrap();
+            let result = escape::quote(s);
             print!("{}", result);
         }
         ("raw-insert", Some(_)) => {
@@ -340,6 +853,132 @@ add-highlighter window/ column "%opt[autowrap_column]" "default,%opt[gruvbox_bg0
                     );
                 }
             }
+        }
+        ("fzf-edit", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let kak_buffile = matches.value_of("kak-buffile").unwrap();
+            fzf::fzf_edit(kak_session, kak_client, kak_buffile);
+        }
+        ("fzf-edit-inner", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let kak_buffile = matches.value_of("kak-buffile").unwrap();
+            fzf::fzf_edit_inner(kak_session, kak_client, kak_buffile);
+        }
+        ("fzf-edit-inner-preview", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let fzf_file = matches.value_of("fzf-file").unwrap();
+            fzf::fzf_edit_inner_preview(kak_session, kak_client, fzf_file);
+        }
+        ("fzf-cd", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            fzf::fzf_cd(kak_session, kak_client);
+        }
+        ("fzf-cd-inner", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            fzf::fzf_cd_inner(kak_session, kak_client);
+        }
+        ("fzf-cd-inner-preview", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let fzf_selected_list = matches
+                .values_of("fzf-selected-list")
+                .unwrap()
+                .collect::<Vec<_>>();
+            fzf::fzf_cd_inner_preview(kak_session, kak_client, fzf_selected_list);
+        }
+        ("fzf-change-buffer", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let kak_buffile = matches.value_of("kak-buffile").unwrap();
+            let kak_buflist = matches
+                .values_of("kak-buflist")
+                .unwrap()
+                .collect::<Vec<_>>();
+            fzf::fzf_change_buffer(kak_session, kak_client, kak_buffile, kak_buflist);
+        }
+        ("fzf-change-buffer-inner", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let kak_buffile = matches.value_of("kak-buffile").unwrap();
+            let kak_buflist = matches
+                .values_of("kak-buflist")
+                .unwrap()
+                .collect::<Vec<_>>();
+            fzf::fzf_change_buffer_inner(kak_session, kak_client, kak_buffile, &kak_buflist);
+        }
+        ("fzf-change-buffer-inner-preview", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let fzf_file = matches.value_of("fzf-file").unwrap();
+            fzf::fzf_change_buffer_inner_preview(kak_session, kak_client, fzf_file);
+        }
+        ("fzf-delete-buffer", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let kak_buffile = matches.value_of("kak-buffile").unwrap();
+            let kak_buflist = matches
+                .values_of("kak-buflist")
+                .unwrap()
+                .collect::<Vec<_>>();
+            fzf::fzf_delete_buffer(kak_session, kak_client, kak_buffile, kak_buflist);
+        }
+        ("fzf-delete-buffer-inner", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let kak_buffile = matches.value_of("kak-buffile").unwrap();
+            let kak_buflist = matches
+                .values_of("kak-buflist")
+                .unwrap()
+                .collect::<Vec<_>>();
+            fzf::fzf_delete_buffer_inner(kak_session, kak_client, kak_buffile, &kak_buflist);
+        }
+        ("fzf-delete-buffer-inner-preview", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let fzf_file = matches.value_of("fzf-file").unwrap();
+            fzf::fzf_delete_buffer_inner_preview(kak_session, kak_client, fzf_file);
+        }
+        ("fzf-lines", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            fzf::fzf_lines(kak_session, kak_client);
+        }
+        ("fzf-lines-inner", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            fzf::fzf_lines_inner(kak_session, kak_client);
+        }
+        ("fzf-lines-inner-preview", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let fzf_indexes = matches
+                .values_of("fzf-indexes")
+                .unwrap()
+                .collect::<Vec<_>>();
+            fzf::fzf_lines_inner_preview(kak_session, kak_client, &fzf_indexes);
+        }
+        ("fzf-rg", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let rg_query = matches.value_of("rg-query").unwrap();
+            fzf::fzf_rg(kak_session, kak_client, rg_query);
+        }
+        ("fzf-rg-inner", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let rg_query = matches.value_of("rg-query").unwrap();
+            fzf::fzf_rg_inner(kak_session, kak_client, rg_query);
+        }
+        ("fzf-rg-inner-preview", Some(matches)) => {
+            let kak_session = matches.value_of("kak-session").unwrap();
+            let kak_client = matches.value_of("kak-client").unwrap();
+            let fzf_file = matches.value_of("fzf-file").unwrap();
+            fzf::fzf_rg_inner_preview(kak_session, kak_client, fzf_file);
         }
         _ => unreachable!(),
     }
