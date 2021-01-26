@@ -2,10 +2,12 @@ mod clipboard;
 mod editorconfig;
 mod editorconfig_sys;
 mod escape;
+mod ft;
 mod fzf;
 mod inc_dec_number;
 mod put_cursors;
 mod selections_desc;
+mod utils;
 mod wrap;
 
 use {
@@ -16,8 +18,10 @@ use {
     selections_desc::SelectionsDesc,
     std::{
         convert::TryFrom,
-        io::{self, Read},
+        env,
+        io::{self, Read, Write},
         path::Path,
+        process::{Command, Stdio},
     },
 };
 
@@ -46,6 +50,20 @@ fn main() -> anyhow::Result<()> {
                 )
         )
         .subcommand(
+            SubCommand::with_name("ft")
+                .about("Print highlighting code for a specific filetype")
+                .arg(
+                    Arg::with_name("filetype")
+                        .short("t")
+                        .long("filetype")
+                        .required(true)
+                        .multiple(true)
+                        .min_values(1)
+                        .possible_values(&["c", "markdown", "makefile", "dart", "dockerfile", "toml", "arch-linux", "asciidoc", "git", "json", "latex", "diff", "html", "cmake", "css", "yaml", "ini", "sql", "systemd", "i3", "kakrc", "sh", "python", "javascript", "rust"])
+                        .help("The target filetype")
+                )
+        )
+        .subcommand(
             SubCommand::with_name("raw-insert")
                 .about("Performs a set of escaping operations to make the piped string insertable in a context like `: i${string}<esc>`")
         )
@@ -65,6 +83,82 @@ fn main() -> anyhow::Result<()> {
                         .takes_value(false)
                         .required(false)
                         .help("Select the text after paste (default is false)"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("check-var")
+                .about("Fail if var is empty")
+                .arg(
+                    Arg::with_name("var")
+                        .short("v")
+                        .long("var")
+                        .takes_value(true)
+                        .required(true)
+                        .help("The variable to check if empty"),
+                )
+                .arg(
+                    Arg::with_name("var-name")
+                        .short("n")
+                        .long("var-name")
+                        .takes_value(true)
+                        .required(true)
+                        .help("The variable name"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("temp-edit")
+                .about("Edit that uses only one buffer")
+                .arg(
+                    Arg::with_name("kak-opt-temp-edit-last-buffer")
+                        .short("b")
+                        .long("kak-opt-temp-edit-last-buffer")
+                        .takes_value(true)
+                        .required(true)
+                        .help("%opt{temp_edit_last_buffer}"),
+                )
+                .arg(
+                    Arg::with_name("filepath")
+                        .short("f")
+                        .long("filepath")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Edit file at `filepath`"),
+                )
+                .arg(
+                    Arg::with_name("line-number")
+                        .short("l")
+                        .long("line-number")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Jump to this line number"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("temp-delete-buffer")
+                .about("Delete the buffer used by `temp-edit`")
+                .arg(
+                    Arg::with_name("kak-opt-temp-edit-last-buffer")
+                        .short("b")
+                        .long("kak-opt-temp-edit-last-buffer")
+                        .takes_value(true)
+                        .required(true)
+                        .help("%opt{temp_edit_last_buffer}"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("pwd")
+                .about("Print the current working directory"),
+        )
+        .subcommand(
+            SubCommand::with_name("remove-trailing-whitespace")
+                .about("Remove trailing whitespace before saving")
+                .arg(
+                    Arg::with_name("kak-opt-filetype")
+                        .short("f")
+                        .long("kak-opt-filetype")
+                        .takes_value(true)
+                        .required(true)
+                        .help("%opt{filetype}"),
                 ),
         )
         .subcommand(
@@ -185,6 +279,28 @@ fn main() -> anyhow::Result<()> {
                         .long("conf-filename")
                         .takes_value(true)
                         .help("Specify conf filename other than \".editorconfig\"")
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("format-selections")
+                .about("Format the selections individually")
+                .arg(
+                    Arg::with_name("kak-opt-formatcmd")
+                        .short("f")
+                        .long("kak-opt-formatcmd")
+                        .required(true)
+                        .takes_value(true)
+                        .help("%opt{formatcmd}")
+                )
+                .arg(
+                    Arg::with_name("kak-opt-formatcmd-args")
+                        .short("a")
+                        .long("kak-opt-formatcmd-args")
+                        .required(false)
+                        .multiple(true)
+                        .allow_hyphen_values(true)
+                        .min_values(0)
+                        .help("%opt{formatcmd_args}")
                 ),
         )
         .subcommand(
@@ -705,6 +821,13 @@ fn main() -> anyhow::Result<()> {
             let result = escape::quote(s);
             print!("{}", result);
         }
+        ("remove-trailing-whitespace", Some(matches)) => {
+            let kak_opt_filetype = matches.value_of("kak-opt-filetype").unwrap();
+            match kak_opt_filetype {
+                "markdown" => {}
+                _ => println!(r#"%s\h+$<ret>d"#),
+            }
+        }
         ("raw-insert", Some(_)) => {
             let mut piped_s = String::new();
             io::stdin().read_to_string(&mut piped_s)?;
@@ -725,6 +848,7 @@ fn main() -> anyhow::Result<()> {
             let prefixes: Option<&[&str]> = match matches.value_of("filetype") {
                 Some("rust") => Some(&["// ", "/// ", "//! "]),
                 Some("sh") | Some("python") | Some("kak") | Some("toml") => Some(&["# "]),
+                Some("") => None,
                 Some(_) => Some(&[]),
                 None => None,
             };
@@ -752,6 +876,23 @@ fn main() -> anyhow::Result<()> {
             let result = IncDecNumber::Decrement.compute(&mut piped_s, &mut other.to_owned());
             println!("{}", result.unwrap_or(piped_s));
         }
+        ("check-var", Some(matches)) => {
+            let var = matches.value_of("var").unwrap();
+            let var_name = matches.value_of("var-name").unwrap();
+            if var.is_empty() {
+                println!("fail 'Required ''{}'' is empty'", var_name);
+            }
+        }
+        ("pwd", Some(_)) => {
+            if let Ok(cwd) = env::current_dir() {
+                if let Some(cwd) = cwd.to_str() {
+                    println!("echo {}", escape::quote(cwd));
+                    return Ok(());
+                }
+            }
+
+            println!("fail 'Failed to get the current working directory'");
+        }
         ("put-cursors", Some(matches)) => {
             let total_lines: usize = matches.value_of("total-lines").unwrap().parse()?;
 
@@ -778,6 +919,114 @@ fn main() -> anyhow::Result<()> {
                 println!("{}", result);
             } else {
                 eprintln!("Invalid %val{{selections_desc}}");
+            }
+        }
+        ("temp-edit", Some(matches)) => {
+            let kak_opt_temp_edit_last_buffer =
+                matches.value_of("kak-opt-temp-edit-last-buffer").unwrap();
+            let line_number = matches.value_of("line-number").unwrap();
+            let filepath = matches.value_of("filepath").unwrap();
+
+            if !kak_opt_temp_edit_last_buffer.is_empty() {
+                println!(
+                    "delete-buffer {}",
+                    escape::quote(kak_opt_temp_edit_last_buffer)
+                );
+            }
+
+            println!(
+                "try %[
+    buffer {0}
+    {2}
+    set-option global temp_edit_last_buffer %[]
+] catch %[
+    set-option global temp_edit_last_buffer {0}
+    edit {0} {1}
+]",
+                escape::quote(filepath),
+                line_number,
+                if !line_number.is_empty() {
+                    format!("{}g", line_number)
+                } else {
+                    Default::default()
+                }
+            );
+        }
+        ("temp-delete-buffer", Some(matches)) => {
+            let kak_opt_temp_edit_last_buffer =
+                matches.value_of("kak-opt-temp-edit-last-buffer").unwrap();
+            if !kak_opt_temp_edit_last_buffer.is_empty() {
+                println!(
+                    "delete-buffer {}",
+                    escape::quote(kak_opt_temp_edit_last_buffer)
+                );
+                println!("set-option global temp_edit_last_buffer %[]");
+            }
+        }
+        ("ft", Some(matches)) => {
+            let filetypes = matches.values_of("filetype").unwrap().collect::<Vec<_>>();
+            for ft in filetypes {
+                match ft {
+                    "c" => print!("{}", ft::c::c()?),
+                    "markdown" => print!("{}", ft::markdown::markdown()?),
+                    "makefile" => print!("{}", ft::makefile::makefile()?),
+                    "dart" => print!("{}", ft::dart::dart()?),
+                    "dockerfile" => print!("{}", ft::dockerfile::dockerfile()?),
+                    "toml" => print!("{}", ft::toml::toml()?),
+                    "arch-linux" => print!("{}", ft::arch_linux::arch_linux()?),
+                    "asciidoc" => print!("{}", ft::asciidoc::asciidoc()?),
+                    "git" => print!("{}", ft::git::git()?),
+                    "json" => print!("{}", ft::json::json()?),
+                    "latex" => print!("{}", ft::latex::latex()?),
+                    "diff" => print!("{}", ft::diff::diff()?),
+                    "html" => print!("{}", ft::html::html()?),
+                    "cmake" => print!("{}", ft::cmake::cmake()?),
+                    "css" => print!("{}", ft::css::css()?),
+                    "yaml" => print!("{}", ft::yaml::yaml()?),
+                    "ini" => print!("{}", ft::ini::ini()?),
+                    "sql" => print!("{}", ft::sql::sql()?),
+                    "systemd" => print!("{}", ft::systemd::systemd()?),
+                    "i3" => print!("{}", ft::i3::i3()?),
+                    "kakrc" => print!("{}", ft::kakrc::kakrc()?),
+                    "sh" => print!("{}", ft::sh::sh()?),
+                    "python" => print!("{}", ft::python::python()?),
+                    "javascript" => print!("{}", ft::javascript::javascript()?),
+                    "rust" => print!("{}", ft::rust::rust()?),
+                    _ => unreachable!("clap bug"),
+                }
+            }
+        }
+        ("format-selections", Some(matches)) => {
+            let kak_opt_formatcmd = matches.value_of("kak-opt-formatcmd").unwrap();
+            let kak_opt_formatcmd_args = matches
+                .values_of("kak-opt-formatcmd-args")
+                .unwrap()
+                .collect::<Vec<_>>();
+
+            if kak_opt_formatcmd.is_empty() {
+                return Ok(());
+            }
+
+            let mut in_buffer = Vec::new();
+            io::stdin().read_to_end(&mut in_buffer)?;
+
+            let mut fmtcmd = Command::new(kak_opt_formatcmd)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .args(&kak_opt_formatcmd_args)
+                .spawn()
+                .unwrap();
+            let fmtcmd_stdin = fmtcmd.stdin.as_mut().unwrap();
+            fmtcmd_stdin.write_all(&in_buffer).unwrap();
+            drop(fmtcmd_stdin);
+            let fmtcmd_output = fmtcmd.wait_with_output().unwrap();
+            if fmtcmd_output.status.success() {
+                let formatcmd_output = String::from_utf8(fmtcmd_output.stdout).unwrap();
+                print!("{}", formatcmd_output);
+            } else {
+                let in_buffer = String::from_utf8(in_buffer).unwrap();
+                print!("{}", in_buffer);
             }
         }
         ("editorconfig", Some(matches)) => {
@@ -858,29 +1107,29 @@ add-highlighter window/ column "%opt[autowrap_column]" "default,%opt[gruvbox_bg0
             let kak_session = matches.value_of("kak-session").unwrap();
             let kak_client = matches.value_of("kak-client").unwrap();
             let kak_buffile = matches.value_of("kak-buffile").unwrap();
-            fzf::fzf_edit(kak_session, kak_client, kak_buffile);
+            fzf::fzf_edit(kak_session, kak_client, kak_buffile)?;
         }
         ("fzf-edit-inner", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
             let kak_client = matches.value_of("kak-client").unwrap();
             let kak_buffile = matches.value_of("kak-buffile").unwrap();
-            fzf::fzf_edit_inner(kak_session, kak_client, kak_buffile);
+            fzf::fzf_edit_inner(kak_session, kak_client, kak_buffile)?;
         }
         ("fzf-edit-inner-preview", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
             let kak_client = matches.value_of("kak-client").unwrap();
             let fzf_file = matches.value_of("fzf-file").unwrap();
-            fzf::fzf_edit_inner_preview(kak_session, kak_client, fzf_file);
+            fzf::fzf_edit_inner_preview(kak_session, kak_client, fzf_file)?;
         }
         ("fzf-cd", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
             let kak_client = matches.value_of("kak-client").unwrap();
-            fzf::fzf_cd(kak_session, kak_client);
+            fzf::fzf_cd(kak_session, kak_client)?;
         }
         ("fzf-cd-inner", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
             let kak_client = matches.value_of("kak-client").unwrap();
-            fzf::fzf_cd_inner(kak_session, kak_client);
+            fzf::fzf_cd_inner(kak_session, kak_client)?;
         }
         ("fzf-cd-inner-preview", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
@@ -889,7 +1138,7 @@ add-highlighter window/ column "%opt[autowrap_column]" "default,%opt[gruvbox_bg0
                 .values_of("fzf-selected-list")
                 .unwrap()
                 .collect::<Vec<_>>();
-            fzf::fzf_cd_inner_preview(kak_session, kak_client, fzf_selected_list);
+            fzf::fzf_cd_inner_preview(kak_session, kak_client, fzf_selected_list)?;
         }
         ("fzf-change-buffer", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
@@ -899,7 +1148,7 @@ add-highlighter window/ column "%opt[autowrap_column]" "default,%opt[gruvbox_bg0
                 .values_of("kak-buflist")
                 .unwrap()
                 .collect::<Vec<_>>();
-            fzf::fzf_change_buffer(kak_session, kak_client, kak_buffile, kak_buflist);
+            fzf::fzf_change_buffer(kak_session, kak_client, kak_buffile, kak_buflist)?;
         }
         ("fzf-change-buffer-inner", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
@@ -909,13 +1158,13 @@ add-highlighter window/ column "%opt[autowrap_column]" "default,%opt[gruvbox_bg0
                 .values_of("kak-buflist")
                 .unwrap()
                 .collect::<Vec<_>>();
-            fzf::fzf_change_buffer_inner(kak_session, kak_client, kak_buffile, &kak_buflist);
+            fzf::fzf_change_buffer_inner(kak_session, kak_client, kak_buffile, &kak_buflist)?;
         }
         ("fzf-change-buffer-inner-preview", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
             let kak_client = matches.value_of("kak-client").unwrap();
             let fzf_file = matches.value_of("fzf-file").unwrap();
-            fzf::fzf_change_buffer_inner_preview(kak_session, kak_client, fzf_file);
+            fzf::fzf_change_buffer_inner_preview(kak_session, kak_client, fzf_file)?;
         }
         ("fzf-delete-buffer", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
@@ -925,7 +1174,7 @@ add-highlighter window/ column "%opt[autowrap_column]" "default,%opt[gruvbox_bg0
                 .values_of("kak-buflist")
                 .unwrap()
                 .collect::<Vec<_>>();
-            fzf::fzf_delete_buffer(kak_session, kak_client, kak_buffile, kak_buflist);
+            fzf::fzf_delete_buffer(kak_session, kak_client, kak_buffile, kak_buflist)?;
         }
         ("fzf-delete-buffer-inner", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
@@ -935,23 +1184,23 @@ add-highlighter window/ column "%opt[autowrap_column]" "default,%opt[gruvbox_bg0
                 .values_of("kak-buflist")
                 .unwrap()
                 .collect::<Vec<_>>();
-            fzf::fzf_delete_buffer_inner(kak_session, kak_client, kak_buffile, &kak_buflist);
+            fzf::fzf_delete_buffer_inner(kak_session, kak_client, kak_buffile, &kak_buflist)?;
         }
         ("fzf-delete-buffer-inner-preview", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
             let kak_client = matches.value_of("kak-client").unwrap();
             let fzf_file = matches.value_of("fzf-file").unwrap();
-            fzf::fzf_delete_buffer_inner_preview(kak_session, kak_client, fzf_file);
+            fzf::fzf_delete_buffer_inner_preview(kak_session, kak_client, fzf_file)?;
         }
         ("fzf-lines", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
             let kak_client = matches.value_of("kak-client").unwrap();
-            fzf::fzf_lines(kak_session, kak_client);
+            fzf::fzf_lines(kak_session, kak_client)?;
         }
         ("fzf-lines-inner", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
             let kak_client = matches.value_of("kak-client").unwrap();
-            fzf::fzf_lines_inner(kak_session, kak_client);
+            fzf::fzf_lines_inner(kak_session, kak_client)?;
         }
         ("fzf-lines-inner-preview", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
@@ -960,25 +1209,25 @@ add-highlighter window/ column "%opt[autowrap_column]" "default,%opt[gruvbox_bg0
                 .values_of("fzf-indexes")
                 .unwrap()
                 .collect::<Vec<_>>();
-            fzf::fzf_lines_inner_preview(kak_session, kak_client, &fzf_indexes);
+            fzf::fzf_lines_inner_preview(kak_session, kak_client, &fzf_indexes)?;
         }
         ("fzf-rg", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
             let kak_client = matches.value_of("kak-client").unwrap();
             let rg_query = matches.value_of("rg-query").unwrap();
-            fzf::fzf_rg(kak_session, kak_client, rg_query);
+            fzf::fzf_rg(kak_session, kak_client, rg_query)?;
         }
         ("fzf-rg-inner", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
             let kak_client = matches.value_of("kak-client").unwrap();
             let rg_query = matches.value_of("rg-query").unwrap();
-            fzf::fzf_rg_inner(kak_session, kak_client, rg_query);
+            fzf::fzf_rg_inner(kak_session, kak_client, rg_query)?;
         }
         ("fzf-rg-inner-preview", Some(matches)) => {
             let kak_session = matches.value_of("kak-session").unwrap();
             let kak_client = matches.value_of("kak-client").unwrap();
             let fzf_file = matches.value_of("fzf-file").unwrap();
-            fzf::fzf_rg_inner_preview(kak_session, kak_client, fzf_file);
+            fzf::fzf_rg_inner_preview(kak_session, kak_client, fzf_file)?;
         }
         _ => unreachable!(),
     }
