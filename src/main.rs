@@ -5,6 +5,7 @@ mod escape;
 mod ft;
 mod fzf;
 mod inc_dec_number;
+mod json_fx;
 mod put_cursors;
 mod selections_desc;
 mod utils;
@@ -47,6 +48,26 @@ fn main() -> anyhow::Result<()> {
                         .takes_value(true)
                         .required(true)
                         .help("The string to quote")
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("json-fx")
+                .about("")
+                .arg(
+                    Arg::with_name("transform")
+                        .short("t")
+                        .long("transform")
+                        .takes_value(true)
+                        .required(true)
+                        .help("The JS code to eval")
+                )
+                .arg(
+                    Arg::with_name("indent")
+                        .short("i")
+                        .long("indent")
+                        .takes_value(true)
+                        .required(false)
+                        .help("The amount of indentation to use for printing the JSON string")
                 )
         )
         .subcommand(
@@ -820,6 +841,40 @@ fn main() -> anyhow::Result<()> {
             let s = matches.value_of("string").unwrap();
             let result = escape::quote(s);
             print!("{}", result);
+        }
+        ("json-fx", Some(matches)) => {
+            let mut stdin_buf = String::new();
+            io::stdin().read_to_string(&mut stdin_buf)?;
+            let transform = matches.value_of("transform").unwrap();
+
+            if transform.is_empty() {
+                print!("{}", stdin_buf);
+                return Ok(());
+            }
+
+            let indent = matches
+                .value_of("indent")
+                .and_then(|x| x.parse::<usize>().ok())
+                .unwrap_or(0);
+            let result = json_fx::json_fx(stdin_buf.as_bytes(), indent, transform);
+            match result {
+                Ok(result) => print!("{}", result),
+                Err(err) => println!(
+                    r#"{{{}"kak_json_fx_error": "{}"{}}}"#,
+                    {
+                        let mut s = String::new();
+                        if indent > 0 {
+                            s.push('\n');
+                            for _ in 0..indent {
+                                s.push(' ');
+                            }
+                        }
+                        s
+                    },
+                    json_fx::json_quote(&err.to_string()),
+                    if indent > 0 { '\n' } else { Default::default() },
+                ),
+            }
         }
         ("remove-trailing-whitespace", Some(matches)) => {
             let kak_opt_filetype = matches.value_of("kak-opt-filetype").unwrap();
